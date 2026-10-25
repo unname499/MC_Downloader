@@ -43,7 +43,7 @@
 
 ### 无 Python 环境用户的使用方法：
 （如果你后续用 PyInstaller 打包了 exe）
-1) 前往 Releases 页面下载最新的 `MC_Downloader.exe`。
+1) 前往 Releases 页面下载最新的 `main.exe`。
 2) 双击运行即可。
 *(注意：部分杀毒软件可能会误报 PyInstaller 打包的程序，请添加信任或自行从源码运行。)*
 
