@@ -18,3 +18,5 @@ build/
 
 .minecraft
 .minecraft_test
+config.ini
+__pycache__
