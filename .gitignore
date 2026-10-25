@@ -1,0 +1,20 @@
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+
+# 依赖与产物
+node_modules/
+dist/
+build/
+*.log
+
+# 本地配置
+.env
+*.local
+
+.minecraft
+.minecraft_test
