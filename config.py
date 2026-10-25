@@ -1,8 +1,21 @@
 # config.py
+import sys
 import configparser
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config.ini"
+# ================= 打包/开发环境路径适配 =================
+if getattr(sys, 'frozen', False):
+    # 打包后的 exe 环境：配置保存在 exe 同级目录
+    BASE_DIR = Path(sys.executable).parent
+else:
+    # 开发环境：配置保存在当前代码所在目录
+    BASE_DIR = Path(__file__).resolve().parent
+
+# 确保目录存在
+BASE_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_PATH = BASE_DIR / "config.ini"
+# ==========================================================
+
 CONFIG_SECTION = "config"
 
 DEFAULT_CONFIG = {

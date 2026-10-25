@@ -1,12 +1,11 @@
 # settings_code.py
 from pathlib import Path
-
 from PySide6.QtWidgets import QMainWindow, QWidget, QLabel, QVBoxLayout, QFileDialog
 from PySide6.QtCore import Qt, Signal
 
 from settings import Ui_MainWindow
 from config import (
-    CONFIG_SECTION, read_conf, write_conf,
+    CONFIG_SECTION, write_conf,
     get_bool, get_int, get_str,
 )
 
@@ -28,11 +27,35 @@ NOTES_TEXT = """设置注意事项：
 
 
 class NotesWindow(QWidget):
-    ...  # 不变，略
+    """设置注意事项子窗口：显示在设置窗口旁边，不遮挡"""
+
+    def __init__(self, parent_settings_window: QWidget):
+        super().__init__(
+            parent_settings_window,
+            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint,
+        )
+        self.setWindowTitle("设置注意事项")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        self.label = QLabel(NOTES_TEXT)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.label)
+
+        hint = QLabel("—— 此说明仅此一次 ——")
+        hint.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        hint.setStyleSheet("color: gray; font-size: 12px;")
+        layout.addWidget(hint)
+
+        self.setFixedWidth(max(self.sizeHint().width(), 300))
+        self.adjustSize()
 
 
 class SettingsWindow(QMainWindow, Ui_MainWindow):
-    config_saved = Signal(object)   # ConfigParser 不是 Qt 内置类型，用 object 更稳
+    config_saved = Signal(object) # 使用 object 代替 ConfigParser 确保兼容性
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -100,14 +123,14 @@ class SettingsWindow(QMainWindow, Ui_MainWindow):
         self.config.set(CONFIG_SECTION, "off_settings_notice",
                         "true" if self.off_settings_notice.isChecked() else "false")
 
-        write_conf(self.config)          # ★ 统一写文件入口
+        write_conf(self.config)
         self.config_saved.emit(self.config)
         self.close()
 
     def on_cancel(self):
         self.close()
 
-    # ---------- 注意事项 ----------
+    # ---------- 注意事项窗口 ----------
     def _show_notes(self):
         if self._notes_window is not None:
             return

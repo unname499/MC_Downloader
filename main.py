@@ -16,15 +16,14 @@ from config import (
     get_bool, get_int, get_str,
 )
 from settings_code import SettingsWindow
-from downloader import DownloadWorker, fetch_version_list
+from downloader import DownloadWorker, VersionFetcher
 
 WELCOME_MSG = "欢迎回来！由于您是第一次使用该软件，稍后会弹出设置窗口，请您自行配置。"
 
 
 def _is_dark_system() -> bool:
     app = QApplication.instance()
-    if app is None:
-        return False
+    if app is None: return False
     return app.palette().color(QPalette.ColorRole.Window).lightness() < 128
 
 
@@ -44,7 +43,7 @@ class MainWindow(QMainWindow):
         self.combo_version = QComboBox()
         self.combo_version.setEditable(True)
         self.combo_version.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.combo_version.lineEdit().setPlaceholderText("选择或输入版本号")
+        self.combo_version.lineEdit().setPlaceholderText("正在获取版本...")
         row_v.addWidget(self.combo_version, 1)
         self.btn_refresh = QPushButton("刷新")
         self.btn_refresh.clicked.connect(self.on_refresh_versions)
@@ -88,25 +87,39 @@ class MainWindow(QMainWindow):
         row_b.addWidget(btn_exit)
         root.addLayout(row_b)
 
-        # 配置（唯一入口）
+        # 配置
         self._first_run = is_first_run()
         self.config = write_default_conf() if self._first_run else read_conf()
         self.edit_dir.setText(get_str(self.config, "minecraft_dir"))
 
         self._worker = None
+        self._fetcher = None
         self._valid_versions = set()
 
-        QTimer.singleShot(0, self.on_refresh_versions)
+        # ★ 关键：这里不直接弹窗，而是延迟启动后台拉取版本。
+        # 这样等主界面画出来，后台线程就开始拉版本了，和欢迎弹窗完全并行。
+        QTimer.singleShot(100, self.on_refresh_versions)
 
     # ---------- 版本列表 ----------
     def on_refresh_versions(self):
-        use_mirror = get_bool(self.config, "use_mirror", True)
-        try:
-            versions = fetch_version_list(use_mirror)
-        except Exception as e:
-            self.append_log(f"[WARN] 获取版本列表失败：{e}")
+        if self._fetcher is not None and self._fetcher.isRunning():
             return
 
+        use_mirror = get_bool(self.config, "use_mirror", True)
+
+        self.btn_refresh.setEnabled(False)
+        self.combo_version.lineEdit().setPlaceholderText("正在获取版本列表...")
+        self._valid_versions.clear()
+        self.combo_version.clear()
+
+        self._fetcher = VersionFetcher(use_mirror, self)
+        self._fetcher.finished.connect(self._on_versions_fetched)
+        self._fetcher.failed.connect(self._on_versions_fetch_failed)
+        self._fetcher.start()
+
+    def _on_versions_fetched(self, versions: list):
+        self.btn_refresh.setEnabled(True)
+        self.combo_version.lineEdit().setPlaceholderText("选择或输入版本号")
         self._valid_versions = {v["id"] for v in versions}
 
         current = self.combo_version.currentText()
@@ -119,12 +132,17 @@ class MainWindow(QMainWindow):
             self.combo_version.setCurrentIndex(idx)
         elif current:
             self.combo_version.setEditText(current)
+
         self.append_log(f"版本列表已更新，共 {len(versions)} 个版本")
+
+    def _on_versions_fetch_failed(self, err: str):
+        self.btn_refresh.setEnabled(True)
+        self.combo_version.lineEdit().setPlaceholderText("获取失败，点击刷新重试")
+        self.append_log(f"[WARN] 获取版本列表失败：{err}")
 
     def on_browse(self):
         d = QFileDialog.getExistingDirectory(self, "选择 .minecraft 目录")
-        if d:
-            self.edit_dir.setText(d)
+        if d: self.edit_dir.setText(d)
 
     # ---------- 开始下载 ----------
     def on_start(self):
@@ -137,21 +155,31 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请输入或选择版本号")
             return
         if version not in self._valid_versions:
-            QMessageBox.warning(
-                self, "版本无效",
-                f"版本 “{version}” 不存在或无效。\n"
-                "请从下拉列表中选择，或点“刷新”后重新输入。"
-            )
+            QMessageBox.warning(self, "版本无效",
+                                f"版本 “{version}” 不存在或无效。\n请从下拉列表中选择，或点“刷新”后重新输入。")
             return
 
         mc_dir = self.edit_dir.text().strip()
         if not mc_dir:
             QMessageBox.warning(self, "提示", "请先选择 .minecraft 下载目录")
             return
+
         mc_path = Path(mc_dir)
-        if not mc_path.exists():
-            QMessageBox.warning(self, "提示", f"目录不存在：{mc_dir}")
+        if not mc_path.is_absolute():
+            QMessageBox.warning(self, "提示", "请使用绝对路径选择 .minecraft 目录")
             return
+
+        if not mc_path.exists():
+            reply = QMessageBox.question(self, "目录不存在", f"目录 {mc_dir} 不存在，是否尝试创建？",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    mc_path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    QMessageBox.critical(self, "创建失败", f"无法创建目录：{e}")
+                    return
+            else:
+                return
 
         threads = get_int(self.config, "threads", 32)
         use_mirror = get_bool(self.config, "use_mirror", True)
@@ -177,8 +205,7 @@ class MainWindow(QMainWindow):
         self.label_stage.setText(f"当前阶段：{name}")
 
     def on_progress(self, done: int, total: int):
-        if total <= 0:
-            return
+        if total <= 0: return
         self.progress_bar.setMaximum(1000)
         self.progress_bar.setValue(int(done * 1000 / total))
 
@@ -206,10 +233,13 @@ class MainWindow(QMainWindow):
     def _on_config_saved(self, config):
         self.config = config
         self.edit_dir.setText(get_str(config, "minecraft_dir"))
-        # ★ 设置里改了镜像源，版本列表也要按新源重拉
         self.on_refresh_versions()
 
     def closeEvent(self, event):
+        if self._fetcher is not None and self._fetcher.isRunning():
+            self._fetcher.terminate()
+            self._fetcher.wait()
+
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait(3000)
@@ -218,11 +248,13 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    # theme = "dark" if _is_dark_system() else "light"
     qdarktheme.setup_theme("auto")
 
     win = MainWindow()
     win.show()
 
+    # ★ 这里原封不动恢复首次启动的欢迎弹窗和设置窗口调用
     if win._first_run:
         QMessageBox.information(win, "欢迎使用", WELCOME_MSG)
         win.on_settings()
