@@ -1,4 +1,7 @@
-# config.py
+# mc_downloader/config.py
+"""
+Configuration management.
+"""
 import sys
 import configparser
 from pathlib import Path
@@ -9,7 +12,7 @@ if getattr(sys, 'frozen', False):
     BASE_DIR = Path(sys.executable).parent
 else:
     # 开发环境：配置保存在当前代码所在目录
-    BASE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 # 确保目录存在
 BASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -23,6 +26,15 @@ DEFAULT_CONFIG = {
     "use_mirror": "true",
     "threads": "32",
     "off_settings_notice": "false",
+    "default_loader": "vanilla",  # vanilla, forge, fabric, quilt, neoforge
+    "forge_version": "",
+    "fabric_version": "",
+    "quilt_version": "",
+    "neoforge_version": "",
+    # 调用 Java 安装器补全 Forge/NeoForge 的数据处理器产物
+    "run_java_installer": "true",
+    # 留空则自动探测（JAVA_HOME / PATH / 常见安装目录）
+    "java_path": "",
 }
 
 
