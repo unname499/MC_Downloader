@@ -11,7 +11,7 @@
 
 1) 克隆此仓库到本地：
    ```bash
-   git clone https://github.com/你的用户名/MC_downloader.git
+   git clone https://github.com/unname499/MC_downloader.git
    cd MC_downloader
    ```
 
